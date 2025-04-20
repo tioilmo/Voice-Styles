@@ -1,0 +1,143 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Style Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+    <div class="bg-white p-6 rounded-lg shadow-lg w-full max-w-2xl">
+        <h1 class="text-2xl font-bold mb-4 text-center">Voice Style Generator</h1>
+        <div class="mb-4">
+            <label for="voicePattern" class="block text-sm font-medium text-gray-700">Voice Pattern</label>
+            <input type="text" id="voicePattern" placeholder="e.g., Cartoon Infantil Feminino, Superhero, Futuristic Robot" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm p-2">
+        </div>
+        <div class="mb-4">
+            <label for="language" class="block text-sm font-medium text-gray-700">Output Language</label>
+            <select id="language" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm p-2">
+                <option value="English">English</option>
+                <option value="Spanish">Spanish</option>
+                <option value="PortugueseBR">Portuguese (BR)</option>
+            </select>
+        </div>
+        <button onclick="generatePrompt()" class="w-full bg-indigo-600 text-white p-2 rounded-md hover:bg-indigo-700">Generate Prompt</button>
+        <div class="mt-4">
+            <label for="output" class="block text-sm font-medium text-gray-700">Generated Prompt</label>
+            <textarea id="output" rows="10" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm p-2" readonly></textarea>
+        </div>
+        <div class="mt-4 flex justify-between">
+            <button onclick="copyPrompt()" class="bg-gray-500 text-white p-2 rounded-md hover:bg-gray-600">Copy Prompt</button>
+            <button onclick="downloadPrompt()" class="bg-green-600 text-white p-2 rounded-md hover:bg-green-700">Download as Text File</button>
+        </div>
+    </div>
+
+    <script>
+        // Definições dos 18 parâmetros
+        const voiceParameters = {
+            Voice: "The overall quality or timbre of the voice (e.g., energetic, deep, soft).",
+            Tone: "The attitude or emotion conveyed by the voice (e.g., excited, mysterious, friendly).",
+            Pacing: "The speed and cadence of speech (e.g., fast, slow, deliberate).",
+            Pauses: "The use of pauses for emphasis or dramatic effect (e.g., short, long, after key moments).",
+            Emotion: "The predominant feeling expressed in the voice (e.g., joy, suspense, empathy).",
+            Pronunciation: "The way words are articulated, including accents or emphases (e.g., clear, elongated, accented).",
+            Phrasing: "The structure and style of sentences (e.g., short, rhythmic, poetic).",
+            Punctuation: "The use of pauses, emphases, or interruptions to create rhythm (e.g., ellipses, abrupt stops).",
+            Delivery: "The overall manner of presenting speech (e.g., theatrical, smooth, rapid).",
+            "Personality/Affect": "The persona or character conveyed by the voice (e.g., charismatic, eccentric).",
+            Dialect: "The use of regional or stylized language (e.g., New York accent, pirate slang).",
+            Features: "Additional elements like slang, interjections, or mannerisms (e.g., surfer slang, pirate 'Arrr').",
+            Inflection: "Variations in pitch or tone to engage the listener (e.g., gentle rises and falls).",
+            "Word Choice": "The type of vocabulary used (e.g., vintage, informal, technical).",
+            "Speech Mannerisms": "Specific habits or traits in speech (e.g., sighs, slang, repetitions).",
+            Emphasis: "Highlighting specific words or phrases (e.g., emphasis on sensory descriptions).",
+            "Accent/Affect": "The specific accent and its influence on the voice (e.g., French accent, Italian intonation).",
+            Identity: "The role or character associated with the voice (e.g., Santa Claus, robot)."
+        };
+
+        function generatePrompt() {
+            const voicePattern = document.getElementById('voicePattern').value.trim();
+            const language = document.getElementById('language').value;
+            if (!voicePattern) {
+                alert('Please enter a voice pattern.');
+                return;
+            }
+
+            // Gerar o prompt para a LLM
+            let prompt = `You are an expert in voice narration styles. The user has requested a voice narration style with the following pattern: "${voicePattern}". The output should be in ${language.replace('PortugueseBR', 'Portuguese (BR)')}. Below are the 18 voice parameters with their definitions:\n\n`;
+
+            for (const [param, desc] of Object.entries(voiceParameters)) {
+                prompt += `- **${param}**: ${desc}\n`;
+            }
+
+            prompt += `\nPlease define the voice style for "${voicePattern}" by describing how each of the 18 parameters applies to this style, tailored to the chosen language (${language.replace('PortugueseBR', 'Portuguese (BR)')}). List the parameters in order of relevance (from most to least important), ensuring all 18 parameters are included. Format each parameter as "<Parameter>: <Definition>", with no extra blank lines between parameters to keep them continuous. For clarity, each parameter must start on a new line with its name followed by a colon and the definition, ensuring no parameters are mixed within the same line of text. Do not enumerate the parameters (do not number them).`;
+
+            document.getElementById('output').value = prompt;
+        }
+
+        function copyPrompt() {
+            const output = document.getElementById('output');
+            output.select();
+            document.execCommand('copy');
+            alert('Prompt copied to clipboard!');
+        }
+
+        function downloadPrompt() {
+            const output = document.getElementById('output').value;
+            const voicePattern = document.getElementById('voicePattern').value.trim() || 'voice_style';
+            const language = document.getElementById('language').value;
+            // Sanitize voice pattern to remove spaces and special characters
+            const sanitizedVoice = voicePattern.replace(/[\s\W]/g, '');
+            const fileName = `${sanitizedVoice}_${language}.txt`;
+            const blob = new Blob([output], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>
